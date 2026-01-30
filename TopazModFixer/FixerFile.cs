@@ -1,5 +1,4 @@
 ﻿using Jade.Ritobin;
-using Microsoft.VisualBasic;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -11,6 +10,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
 using ZstdSharp;
+using static System.Net.Mime.MediaTypeNames;
 using Path = System.IO.Path;
 using SearchOption = System.IO.SearchOption;
 
@@ -99,7 +99,7 @@ namespace ModManager
         public List<string> Missing_Bins { get; set; } = new List<string>();
         public List<string> Missing_Files { get; set; } = new List<string>();
         public List<string> CharraBlackList = ["viegowraith"];
-        public uint bnk_version { get; set; } = 145; 
+        public uint bnk_version { get; set; } = 145;
         public string manifest_145 { get; set; } = "https://lol.secure.dyn.riotcdn.net/channels/public/releases/998BEDBD1E22BD5E.manifest";
         public List<ShaderEntry> shaders { get; set; } = null;
         public string ManfiestDL { get; set; } = Path.Combine("cslol-tools", "ManifestDownloader.exe");
@@ -433,9 +433,9 @@ namespace ModManager
                     var entryKey = (BinHash)kvp.Key;
                     var entryData = (BinEmbed)kvp.Value;
                     uint hash = entryKey.Value.Hash;
-                
+
                     if (hash == 0) continue;
-                
+
                     if (entryData.Name.Hash == 0x205255d6) // CustomShaderDef
                     {
                         existingHashes.Add(entryKey.Value.Hash);
@@ -490,8 +490,15 @@ namespace ModManager
                 return (Shader.Hash, Shader.Path, "");
             }
 
-            HashSet<string> targetTokens = new HashSet<string>(parts[2].Split('_'));
-
+            HashSet<string> targetTokens = [.. parts[^1].Split('_')];
+            if (targetTokens.Remove("MultiLayered"))
+            {
+                targetTokens.Add("MultiLayer");
+            }
+            if (targetTokens.Remove("Addative"))
+            {
+                targetTokens.Add("Additive");
+            }
             ShaderEntry bestMatch = null;
             int bestMutualCount = -1;
             int bestNonMutualCount = int.MaxValue;
@@ -543,7 +550,7 @@ namespace ModManager
             }
             else
             {
-                return (Shader.Hash, Shader.Path,"");
+                return (Shader.Hash, Shader.Path, "");
             }
         }
 
@@ -691,8 +698,8 @@ namespace ModManager
                         uint newRRHash = FNV1aHash($"Characters/{Settings.Character}/Skins/Skin{i}/Resources");
 
                         skinKeyRef.Value = new FNV1a(newSkinHash);
-                        if(rrLinkRef?.Value != null) rrLinkRef.Value = new FNV1a(newRRHash);
-                        if(rrKeyRef != null) rrKeyRef.Value = new FNV1a(newRRHash);
+                        if (rrLinkRef?.Value != null) rrLinkRef.Value = new FNV1a(newRRHash);
+                        if (rrKeyRef != null) rrKeyRef.Value = new FNV1a(newRRHash);
 
                         Save_Bin(linkedList, binentries, $"{Settings.outputDir}/{binPath}");
                     }
@@ -817,7 +824,7 @@ namespace ModManager
                     foreach (var kv in Audio_to_dl)
                     {
                         string VO_path = Path.Combine("manifests", $".lang_{Settings.bnk_version}");
-                        string VO_wad = Path.Combine(VO_path, "DATA","FINAL","Champions",$"{Settings.Character}.{kv.Key}.wad.client");
+                        string VO_wad = Path.Combine(VO_path, "DATA", "FINAL", "Champions", $"{Settings.Character}.{kv.Key}.wad.client");
                         if (!File.Exists(VO_wad))
                         {
                             x.LowerLog($"[WAIT] Downloading {Settings.Character}.{kv.Key}.wad.client to fix events.bnk", CLR_MOD);
@@ -853,7 +860,7 @@ namespace ModManager
                         {
                             x.LowerLog($"[FIXI] Fixing VO", CLR_ACT);
                             var left = _wadExtractor.ExtractAndSwapReferences([VO_wad], kv.Value);
-                            if( left.Count != 0)
+                            if (left.Count != 0)
                             {
                                 left = _hashes.FindMatches(left);
                                 left = _wadExtractor.ExtractAndSwapReferences([VO_wad], kv.Value);
@@ -903,7 +910,8 @@ namespace ModManager
                         }
 
                         processing.Remove(target);
-                    }else if (ver > Settings.bnk_version)
+                    }
+                    else if (ver > Settings.bnk_version)
                     {
                         x.LowerLog("[INFO] UR APP NEED UPDATE BTW, DID U KNOW THAT?????", CLR_GOOD);
                     }
@@ -1306,10 +1314,12 @@ namespace ModManager
                 {
                     bin = LoadBin(path);
                 }
-                catch (Exception e){
+                catch (Exception e)
+                {
                     x.UpperLog($"[FAIL] Failed to read {trimmedPath}, {e}", CLR_ERR);
                     Settings.Missing_Bins.Add($"[Read Error] {path}");
-                    continue; }
+                    continue;
+                }
                 if (bin == null) continue;
 
                 Console.WriteLine($"Loaded: {path}");
@@ -1593,29 +1603,33 @@ namespace ModManager
             {
                 if (entry.Value.Value is BinEmbed materialEmbed2)
                 {
-                    var embedListField = materialEmbed2.Items.FirstOrDefault(f => f.Key.Hash == 0x0a6f0eb5);
+                    var listField = materialEmbed2.Items.FirstOrDefault(f =>
+                        f.Key.Hash == 0x0a6f0eb5 || f.Key.Hash == 0xf3d3de85);
 
-                    if (embedListField != null && embedListField.Value is BinList2 embedList)
+                    if (listField != null)
                     {
-                        // "for each 0x0904b150 in it" -> Iterate the Embeds inside the list
-                        foreach (var listItem in embedList.Items)
+                        // Use pattern matching to extract the Items regardless of which list type it is
+                        List<BinValue>? itemsToProcess = listField.Value switch
                         {
-                            if (listItem is BinEmbed innerEmbed)
+                            BinList2 l2 => l2.Items,
+                            BinList l1 => l1.Items,
+                            _ => null
+                        };
+
+                        if (itemsToProcess != null)
+                        {
+                            foreach (var listItem in itemsToProcess)
                             {
-                                // Iterate over the fields in the inner embed to find 0x0904b150
-                                foreach (var field in innerEmbed.Items)
+                                if (listItem is BinEmbed innerEmbed)
                                 {
-                                    if (field.Value is BinString strVal)
+                                    foreach (var field in innerEmbed.Items)
                                     {
-                                        if (strVal.Value.Contains("."))
+                                        if (field.Value is BinString strVal)
                                         {
-                                            // Set key to 0x02e7fb4c
-                                            field.Key = new FNV1a(0xf0a363e3);
-                                        }
-                                        else
-                                        {
-                                            // Set key to 0xb311d4ef
-                                            field.Key = new FNV1a(0xb311d4ef);
+                                            // Logic: Set key based on whether string contains a dot
+                                            field.Key = strVal.Value.Contains(".")
+                                                ? new FNV1a(0xf0a363e3)
+                                                : new FNV1a(0xb311d4ef);
                                         }
                                     }
                                 }
@@ -1675,7 +1689,8 @@ namespace ModManager
                 }
             }
 
-            if (Settings.FixiShape) {
+            if (Settings.FixiShape)
+            {
                 foreach (var entry in VFXEntries)
                 {
                     // Ensure we are working with a BinEmbed (the root definition)
@@ -1938,7 +1953,7 @@ namespace ModManager
 
             foreach (string characterToLoad in ExtraCharactersToLoad)
             {
-                if (!Settings.CharraBlackList.Contains(characterToLoad, StringComparer.OrdinalIgnoreCase)) Characters.Enqueue((characterToLoad, Settings.skinNo, false));  
+                if (!Settings.CharraBlackList.Contains(characterToLoad, StringComparer.OrdinalIgnoreCase)) Characters.Enqueue((characterToLoad, Settings.skinNo, false));
             }
 
             var finalMap = new BinMap(BinType.Hash, BinType.Embed);
@@ -2012,7 +2027,7 @@ namespace ModManager
             // rootValue is the 0xbc037de7 container
             List<BinField>? tableData = GetItemsFromBinValue(rootValue);
             if (tableData == null) return;
-        
+
             foreach (var td in tableData)
             {
                 if (td.Key.Hash == 0xa7084719) // "list[pointer]" usually
@@ -2024,7 +2039,7 @@ namespace ModManager
                         {
                             List<BinField>? smollShits = GetItemsFromBinValue(shit);
                             if (smollShits == null) continue;
-        
+
                             foreach (var smoll_shit in smollShits)
                             {
                                 if (smoll_shit.Key.Hash == 0xe44b7382)
@@ -2034,7 +2049,7 @@ namespace ModManager
                                     {
                                         float d0 = (f32List.Items[0] as BinF32)?.Value ?? -999;
                                         float d1 = (f32List.Items[1] as BinF32)?.Value ?? -999;
-        
+
                                         if (d0 == 0 && d1 >= 1)
                                         {
                                             flags = true;
@@ -2053,13 +2068,13 @@ namespace ModManager
                 }
             }
         }
-        
+
         private void AnalyzeNestedTableForRotation(BinValue rootValue, ref bool emitRotation)
         {
             // rootValue is 0xbc037de7 container
             List<BinField>? tableData = GetItemsFromBinValue(rootValue);
             if (tableData == null) return;
-        
+
             foreach (var td in tableData)
             {
                 if (td.Key.Hash == 0xa7084719)
@@ -2070,7 +2085,7 @@ namespace ModManager
                         {
                             List<BinField>? smollShits = GetItemsFromBinValue(shit);
                             if (smollShits == null) continue;
-        
+
                             foreach (var smoll_shit in smollShits)
                             {
                                 if (smoll_shit.Key.Hash == 0xe44b7382)
@@ -2079,7 +2094,7 @@ namespace ModManager
                                     {
                                         float d0 = (f32List.Items[0] as BinF32)?.Value ?? -999;
                                         float d1 = (f32List.Items[1] as BinF32)?.Value ?? -999;
-        
+
                                         if (d0 == 0 && d1 > 1)
                                         {
                                             emitRotation = true;
@@ -2105,6 +2120,7 @@ namespace ModManager
             {
                 case BinString str:
                     string s = str.Value;
+
                     if (!string.IsNullOrWhiteSpace(s) && s.Contains('.'))
                     {
                         int lastDot = s.LastIndexOf('.');
@@ -2119,14 +2135,37 @@ namespace ModManager
                             var hashes = new List<string> { s };
 
                             if (s.EndsWith(".tex", StringComparison.OrdinalIgnoreCase))
-                            {
                                 hashes.Add(Path.ChangeExtension(s, ".dds"));
-                            }
-                            else if (s.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
-                            {
+                            if (s.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
                                 hashes.Add(Path.ChangeExtension(s, ".tex"));
-                            }
-                            WadExtractor.Target found = results.FirstOrDefault(t => string.Equals(t.OriginalPath, s, StringComparison.OrdinalIgnoreCase));
+                            if (s.EndsWith(".sco", StringComparison.OrdinalIgnoreCase))
+                                hashes.Add(Path.ChangeExtension(s, ".scb"));
+
+                            if (s.ToLower() == "assets/characters/taliyah/skins/base/particles/taliyah_base_e_stone_mine_2_slow.anm")
+                                hashes.Add("assets/characters/taliyah/skins/base/particles/taliyah_base_e_stone_mine_2.anm");
+                            if (s.ToLower() == "assets/characters/taliyah/skins/base/particles/taliyah_base_e_stone_mine_1_slow.anm")
+                                hashes.Add("assets/characters/taliyah/skins/base/particles/taliyah_base_e_stone_mine_1.anm");
+
+                            WadExtractor.Target found = results.FirstOrDefault(t =>
+                            {
+                                // 1. Check for an exact match first
+                                if (string.Equals(t.OriginalPath, s, StringComparison.OrdinalIgnoreCase))
+                                    return true;
+
+                                // 2. Check for interchangeable extensions (.dds <-> .tex)
+                                string ext = Path.GetExtension(s);
+                                if (string.Equals(ext, ".dds", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(ext, ".tex", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    string baseName = Path.ChangeExtension(s, null); // Get path without extension
+                                    string targetExt = string.Equals(ext, ".dds", StringComparison.OrdinalIgnoreCase) ? ".tex" : ".dds";
+                                    string alternativePath = baseName + targetExt;
+
+                                    return string.Equals(t.OriginalPath, alternativePath, StringComparison.OrdinalIgnoreCase);
+                                }
+
+                                return false;
+                            });
                             if (found != null)
                             {
                                 found.BinStringRef.Add(str);
@@ -2986,14 +3025,37 @@ namespace ModManager
                 "characters", "items", "loadouts", "maps", "particles",
                 "perks", "rewards", "shared", "sounds", "spells", "ux"
             };
-
+            private HashSet<string> seen = new HashSet<string>();
             public string FixPath(string finalPath)
+            {
+                finalPath = FixPath_local(finalPath);
+
+                if (seen.Add(finalPath))
+                    return finalPath;
+
+                string dir = Path.GetDirectoryName(finalPath)!;
+                string name = Path.GetFileNameWithoutExtension(finalPath);
+                string ext = Path.GetExtension(finalPath);
+
+                int i = 1;
+                string candidate;
+
+                do
+                {
+                    candidate = Path.Combine(dir, $"{name}_{i}{ext}");
+                    i++;
+                }
+                while (!seen.Add(candidate));
+
+                return candidate;
+            }
+
+            public string FixPath_local(string finalPath)
             {
                 if (_settings.cls_assets)
                     finalPath = CleanRootPath(finalPath);
 
-                string norm = finalPath.Replace("\\", "/");
-                string[] parts = norm.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                string[] parts = finalPath.Replace("\\", "/").Split('/', StringSplitOptions.RemoveEmptyEntries);
 
                 string firstFolder = parts.Length > 0 ? parts[0].ToLower() : "";
                 string ext = parts.Length > 0
@@ -3048,56 +3110,93 @@ namespace ModManager
 
             static string CleanRootPath(string path)
             {
-                string pathNorm = path.Replace("\\", "/").ToLower();
-                string[] parts = pathNorm.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                string[] parts = path.Replace("\\", "/").Split('/', StringSplitOptions.RemoveEmptyEntries);
 
-                string root = null;
                 int rootIndex = -1;
+                string rootName = "";
 
                 for (int i = 0; i < parts.Length; i++)
                 {
+                    string pLower = parts[i].ToLower();
                     foreach (string r in Roots)
                     {
-                        if (parts[i] == r || parts[i].Contains(r))
+                        if (pLower == r || pLower.Contains(r))
                         {
-                            root = r;
                             rootIndex = i;
+                            rootName = r;
                             break;
                         }
                     }
-                    if (root != null)
-                        break;
+                    if (rootIndex != -1) break;
                 }
 
-                if (root == null)
-                    return path;
-
-                string category = null;
-                int categoryIndex = -1;
-
-                for (int j = rootIndex + 1; j < parts.Length; j++)
+                if (rootIndex == -1)
                 {
-                    string cleaned = new string(parts[j].Where(char.IsLetter).ToArray());
-                    if (Categories.Contains(cleaned, StringComparer.OrdinalIgnoreCase))
+                    string ext = parts.Length > 0
+                    ? Path.GetExtension(parts[^1]).ToLower()
+                    : "";
+                    string prefixRoot = (ext == ".bin" || ext == "")
+                        ? "DATA"
+                        : "ASSETS";
+                    var list = parts.ToList();
+                    list.Insert(0, prefixRoot);
+                    parts = list.ToArray();
+                }
+                else
+                {
+                    parts = parts.Skip(rootIndex).ToArray();
+                }
+                if (parts.Length == 2)
+                {
+                    return string.Join("/", parts);
+                }
+                if (parts.Length > 2)
+                {
+                    string check = parts[1].ToLower();
+                    foreach (string r in Categories)
                     {
-                        category = cleaned;
-                        categoryIndex = j;
-                        break;
+                        if (check == r)
+                        {
+                            return string.Join("/", parts);
+                        }
+                        if (check.Contains(r))
+                        {
+                            parts[1] = r;
+                            return string.Join("/", parts);
+                        }
                     }
                 }
+                if (parts.Length > 3)
+                {
+                    string check = parts[2].ToLower();
+                    foreach (string r in Categories)
+                    {
+                        if (check == r)
+                        {
+                            return string.Join(
+    "/",
+    parts.Where((value, index) => index != 1)
+);
 
-                if (category == null)
-                    return path;
+                        }
+                        if (check.Contains(r))
+                        {
+                            parts[2] = r;
+                            return string.Join(
+    "/",
+    parts.Where((value, index) => index != 1)
+);
 
-                var rest = parts.Skip(categoryIndex + 1);
-                return string.Join("/", new[] { root, category }.Concat(rest));
+                        }
+                    }
+                }
+                return string.Join("/", parts);
             }
         }
 
         public class Hashes
         {
             private FixerSettings _settings;
-            // Cached paths are now per-instance to allow settings isolation
             private List<string> _cachedPaths;
             public DummyLogger x;
 
@@ -3160,8 +3259,10 @@ namespace ModManager
                         string pathExt = Path.GetExtension(path).ToLowerInvariant();
 
                         if (pathExt == targetExt ||
+                            (targetExt == ".sco" && pathExt == ".scb") ||
                             (targetExt == ".dds" && pathExt == ".tex") ||
-                            (targetExt == ".tex" && pathExt == ".dds"))
+                            (targetExt == ".tex" && pathExt == ".dds")
+                            )
                         {
                             target.Hashes.Add(path);
                         }
