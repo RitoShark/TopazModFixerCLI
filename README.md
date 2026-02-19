@@ -10,6 +10,7 @@ USAGE:
   App.exe <config.json> -chk      - Check mode only
 
 CONFIG FILE FORMAT (JSON):
+```json
   {
     "Character": "Ahri",              // REQUIRED
     "BaseWadPath": [                  // REQUIRED (at least one path)
@@ -21,7 +22,7 @@ CONFIG FILE FORMAT (JSON):
     "Folder": true,
     // ... other optional settings
   }
-
+```
 AVAILABLE SETTINGS:
 
   Strings:
