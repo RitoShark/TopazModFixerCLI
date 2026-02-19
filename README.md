@@ -4,12 +4,13 @@ Its intended for automatization and/or implementation in other tools, not for ma
 
 For more details contact me via discord: aurecueil
 
-USAGE:
+## USAGE:
+```
   App.exe help                    - Show this help
   App.exe <config.json>           - Run with config file
   App.exe <config.json> -chk      - Check mode only
-
-CONFIG FILE FORMAT (JSON):
+```
+## CONFIG FILE FORMAT (JSON):
 ```json
   {
     "Character": "Ahri",              // REQUIRED
@@ -23,8 +24,8 @@ CONFIG FILE FORMAT (JSON):
     // ... other optional settings
   }
 ```
-AVAILABLE SETTINGS:
-
+## AVAILABLE SETTINGS:
+```
   Strings:
     Character, Output, GameWadPath, RepathFolder,
     GameHashesPath, ShaderHashesPath, Manifest_145, ManifestDownloaderPath
@@ -42,6 +43,7 @@ AVAILABLE SETTINGS:
 
   Lists (arrays of strings):
     BaseWadPath, OldLookUp, CharraBlackList
+```
 
-NOTE: Only specify settings you want to change. Unspecified settings
-      will retain their default values.
+> [!IMPORTANT]
+> Only specify settings you want to change. Unspecified settings will retain their default values.
