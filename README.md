@@ -25,6 +25,9 @@ For more details contact me via discord: aurecueil
   }
 ```
 ## AVAILABLE SETTINGS:
+
+> [!IMPORTANT]
+> Only specify settings you want to change. Unspecified settings will retain their default values.
 ```
   Strings:
     Character, Output, GameWadPath, RepathFolder,
@@ -44,6 +47,3 @@ For more details contact me via discord: aurecueil
   Lists (arrays of strings):
     BaseWadPath, OldLookUp, CharraBlackList
 ```
-
-> [!IMPORTANT]
-> Only specify settings you want to change. Unspecified settings will retain their default values.
